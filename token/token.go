@@ -9,6 +9,8 @@ const (
 	literal_begin
 	IDENT   // main_main
 	DEC     // 6.023E+24
+	INT     // 4563 -- DEC literal
+	REAL    // 4.563 -- DEC literal
 	BASED   // 2#1111_1111# -> 255
 	CHAR    // 'a'
 	STRING  // "abc"
@@ -428,6 +430,6 @@ func (op Token) PrecedenceAlternativeOperator() int {
 	}
 }
 
-func (tok Token) String() string{
-    return tokens[tok]
+func (tok Token) String() string {
+	return tokens[tok]
 }
