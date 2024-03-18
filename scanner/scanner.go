@@ -2,7 +2,9 @@ package scanner
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"unicode"
 	"vhdl/token"
 )
@@ -17,12 +19,10 @@ type Scanner struct {
 	mode Mode         // scanning mode
 
 	// scanning state
-	ch         rune      // current character
-	offset     int       // character offset
-	rdOffset   int       // reading offset (position after current character)
-	lineOffset int       // current line offset
-	insertSemi bool      // insert a semicolon before next newline
-	nlPos      token.Pos // position of newline in preceding comment
+	ch         rune // current character
+	offset     int  // character offset
+	rdOffset   int  // reading offset (position after current character)
+	lineOffset int  // current line offset
 	//public state - ok to modify
 	ErrorCount int // number of errors encountered
 	// contains filtered or unexported fields
@@ -34,7 +34,25 @@ const (
 )
 
 func (s *Scanner) Init(file *token.File, src []byte, err ErrorHandler, mode Mode) {
+	if file.Size() != len(src) {
+		panic(fmt.Sprintf("file size (%d) does not match src len (%d)", file.Size(), len(src)))
+	}
+	s.file = file
+	s.dir, _ = filepath.Split(file.Name())
+	s.src = src
+	s.err = err
+	s.mode = mode
 
+	s.ch = ' '
+	s.offset = 0
+	s.rdOffset = 0
+	s.lineOffset = 0
+	s.ErrorCount = 0
+
+	s.next()
+	if s.ch == bom {
+		s.next() // ignore BOM at file beginning
+	}
 }
 func (s *Scanner) error(offs int, msg string) {
 	if s.err != nil {
@@ -228,5 +246,255 @@ func (s *Scanner) scanNumber() (token.Token, string) {
 
 }
 
+func (s *Scanner) scanRune() string {
+	offs := s.offset - 1 // Consumed "'"
+	//VHDL char is 'graphic_character'
+	if s.ch == '\n' {
+		s.error(s.offset, "Breaking space character")
+	}
+	s.next() //Consume graphic_character
+	s.next() //Consume '
+	return string(s.src[offs:s.offset])
+}
+
+func (s *Scanner) scanString() string {
+	offs := s.offset - 1 //Already consumed "
+	for {
+		if s.ch == '\n' {
+			s.error(offs, "string literal not terminated")
+			break
+		}
+		s.next()
+		if s.ch == '"' {
+			break
+		}
+	}
+	return string(s.src[offs:s.offset])
+
+}
+
+func (s *Scanner) skipWhitespace() {
+	for s.ch == ' ' || s.ch == '\t' || s.ch == '\n'  || s.ch == '\r' {
+		s.next()
+	}
+}
+
+func isBaseSpecifierPrefix(ch rune) bool {
+	//B|O|X|UB|UO|UX|SB|SO|SX|D
+	return lower(ch) == 'b' || lower(ch) == 'o' || lower(ch) == 'u' || lower(ch) == 'x' || lower(ch) == 's' || lower(ch) == 'd'
+}
+
+func (s *Scanner) scanBitStringPrefix() bool {
+	is_valid_bit_string_prefix := true
+	has_sign := false
+
+	if lower(s.ch) == 'u' || lower(s.ch) == 's' {
+		//Consume 'u' or 's'
+		s.next()
+		has_sign = true
+	}
+
+	if lower(s.ch) == 'd' && has_sign {
+		is_valid_bit_string_prefix = false
+	}
+
+	//Consume X. O, B or D
+	s.next()
+
+	return is_valid_bit_string_prefix
+}
+
 func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
+
+	s.skipWhitespace()
+	pos = s.file.Pos(s.offset)
+
+	switch ch := s.ch; {
+
+	//--------------------------------------Letter-------------------------------------------------------
+	//We detected a graphic_character it could be a identifier or a keyword or a bit strign
+	case unicode.IsLetter(ch):
+		lit = s.scanIdentifier()
+		//If the len is greater than 1, we have a keyword, identifier or bit_string so we are going to match the literal to the token to see
+		//if it is a keyword
+		if len(lit) > 1 {
+			switch tok {
+			case token.IDENT:
+				//Ugly but needed to capture bit_str with number length
+				switch strings.ToLower(lit) {
+				case "sb", "so", "sx", "ub", "uo", "ux":
+					if s.ch == '"' {
+						s.next()
+						bit_str := s.scanString()
+						lit = lit + bit_str
+						tok = token.BIT_STR
+					}
+
+				}
+			}
+		} else {
+			tok = token.IDENT
+			switch strings.ToLower(lit) {
+			case "x", "o", "b", "d":
+				if s.ch == '"' {
+					s.next()
+					bit_str := s.scanString()
+					lit = lit + bit_str
+					tok = token.BIT_STR
+				}
+
+			}
+		}
+	//---------------------------------------------------------------------------------------------
+
+	//------------------Digits---------------------------------------------------------------------------
+	case isDecimal(ch):
+		// We found a string literal or an abstract literal
+		tok, lit = s.scanNumber()
+		//Right now we have a abstract literal to check if it as string we need the following
+		// that the lit is a integer, not float or based. It is followed by: B|O|X|UB|UO|UX|SB|SO|SX|D
+		if tok == token.INT && isBaseSpecifierPrefix(s.ch) {
+			offs := s.offset
+			if s.scanBitStringPrefix() {
+				s.next()
+				s.scanString()
+				tok = token.BIT_STR
+				lit = lit + string(s.src[offs:s.offset])
+			} else {
+				tok = token.ILLEGAL
+				lit = lit + string(s.src[offs:s.offset])
+			}
+		}
+
+		//---------------------------------------------------------------------------------------------
+		//-------------Default Other symbols--------------------------------------------------------------------------------
+	default:
+		s.next()
+		switch ch {
+		case eof:
+			tok = token.EOF
+		case '\n':
+			// we only reach here if s.insertSemi was
+			// set in the first place and exited early
+			// from s.skipWhitespace()
+			return pos, token.ILLEGAL, "\n"
+		case '"':
+			tok = token.STRING
+			lit = s.scanString()
+		case '\'':
+			//TODO add only ' recognition
+			//peek must be ' only 1 char inside ' '
+			if s.peek() != '\'' {
+				tok = token.APOS
+			} else {
+				tok = token.CHAR
+				lit = s.scanRune()
+			}
+		case ':':
+			tok = token.COLON
+			if s.ch == '=' {
+				tok = token.VAR_ASSIGN
+			}
+		case '.':
+			tok = token.DOT
+		case ',':
+			tok = token.COMMA
+		case ';':
+			tok = token.SEMICOLON
+			lit = ";"
+		case '(':
+			tok = token.LPAREN
+		case ')':
+			tok = token.RPAREN
+		case '[':
+			tok = token.LSQPAREN
+		case ']':
+			tok = token.RSQPAREN
+		case '+':
+			tok = token.PLUS
+		case '-':
+			if s.ch == '-' {
+				//Comment
+				comment, valid := s.scanComment()
+				tok = token.COMMENT
+				if !valid {
+					tok = token.ILLEGAL
+				}
+				lit = comment
+			} else {
+				// Minus
+				tok = token.MINUS
+			}
+
+			//Add comment catch
+			tok = token.MINUS
+		case '&':
+			tok = token.CONCAT
+		case '?':
+			tok = token.COND_CONV
+		case '=':
+			tok = token.EQL
+			if s.ch == '>' {
+				tok = token.ARROW
+				s.next()
+			}
+		case '*':
+			tok = token.MULT
+			if s.ch == '*' {
+				tok = token.EXP
+				s.next()
+			}
+		case '/':
+			if s.ch == '*' {
+				//Comment
+				comment, valid := s.scanComment()
+				tok = token.COMMENT
+				if !valid {
+					tok = token.ILLEGAL
+				}
+				lit = comment
+			} else if s.ch == '=' {
+				tok = token.NEQ
+				s.next()
+			} else {
+				tok = token.DIV
+			}
+		case '<':
+			tok = token.LTH
+			if s.ch == '=' {
+				tok = token.LEQ_SA
+				s.next()
+			} else if s.ch == '>' {
+				tok = token.BOX
+				s.next()
+			}
+		case '>':
+			tok = token.GTH
+			if s.ch == '=' {
+				tok = token.GEQ
+				s.next()
+			}
+		case '|':
+			tok = token.VLINE
+			//TODO: Do rest of ? operators/delimeters
+
+		default:
+			// next reports unexpected BOMs - don't repeat
+			if ch != bom {
+				// Report an informative error for U+201[CD] quotation
+				// marks, which are easily introduced via copy and paste.
+				if ch == '“' || ch == '”' {
+					s.errorf(s.file.Offset(pos), "curly quotation mark %q (use neutral %q)", ch, '"')
+				} else {
+					s.errorf(s.file.Offset(pos), "illegal character %#U", ch)
+				}
+			}
+			tok = token.ILLEGAL
+			lit = string(ch)
+
+		}
+
+	}
+
+	return
 }
