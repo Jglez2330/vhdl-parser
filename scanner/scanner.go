@@ -1,5 +1,7 @@
 package scanner
 
+//TODO make scanner more readle
+
 import (
 	"fmt"
 	"path/filepath"
@@ -65,7 +67,7 @@ func (s *Scanner) errorf(offs int, format string, args ...any) {
 	s.error(offs, fmt.Sprintf(format, args...))
 }
 func (s *Scanner) next() {
-	if s.rdOffset > len(s.src) {
+	if s.rdOffset >= len(s.src) {
 		s.offset = len(s.src)
 		if s.ch == '\n' {
 			s.lineOffset = s.offset
@@ -74,14 +76,14 @@ func (s *Scanner) next() {
 		s.ch = eof
 		return
 	}
-	s.offset += 1             //Increase 1 byte
-	s.rdOffset = s.offset + 1 //Increase 1 byte
 	if s.ch == '\n' {
 		s.lineOffset = s.offset
 		s.file.AddLine(s.offset)
 	}
-	s.ch = rune(s.src[s.offset])
+	s.ch = rune(s.src[s.rdOffset])
 
+	s.offset = s.rdOffset //Increase 1 byte
+	s.rdOffset += 1       //Increase 1 byte
 	if s.ch == 0 {
 		s.error(s.offset, "illegal character NUL")
 	}
@@ -95,7 +97,7 @@ func (s *Scanner) peek() rune {
 	return 0
 }
 
-func (s *Scanner) scanComment() (string, bool) {
+func (s *Scanner) scanMultipleLineComment() (string, bool) {
 	offs := s.offset - 1
 	valid := false //If set means a valid comment was found
 	//On VHDL we have /**/ commants and -- comments
@@ -111,8 +113,16 @@ func (s *Scanner) scanComment() (string, bool) {
 
 		}
 
-	} else if s.ch == '/' {
-		s.next()                        //consume '/'
+	}
+	return string(s.src[offs:s.offset]), valid
+}
+
+func (s *Scanner) scanSingleLineComment() (string, bool) {
+	offs := s.offset - 1
+	valid := false //If set means a valid comment was found
+	//On VHDL we have /**/ commants and -- comments
+	if s.ch == '-' {
+		s.next()                        //consume '-'
 		for s.ch != '\n' && s.ch >= 0 { //Consume everything valid until newline
 			s.next() //Consume everything
 		}
@@ -121,7 +131,6 @@ func (s *Scanner) scanComment() (string, bool) {
 			valid = true //If the current rune is newlinw the comment is valid
 		}
 	}
-
 	return string(s.src[offs:s.offset]), valid
 }
 
@@ -141,8 +150,8 @@ func (s *Scanner) scanIdentifier() string {
 			s.offset = s.rdOffset
 			s.rdOffset++
 			valid = true
-			break
 		}
+		break
 	}
 	if !valid {
 		s.offset = len(s.src)
@@ -266,6 +275,8 @@ func (s *Scanner) scanString() string {
 		}
 		s.next()
 		if s.ch == '"' {
+			//Consume '"'
+			s.next()
 			break
 		}
 	}
@@ -274,7 +285,7 @@ func (s *Scanner) scanString() string {
 }
 
 func (s *Scanner) skipWhitespace() {
-	for s.ch == ' ' || s.ch == '\t' || s.ch == '\n'  || s.ch == '\r' {
+	for s.ch == ' ' || s.ch == '\t' || s.ch == '\n' || s.ch == '\r' {
 		s.next()
 	}
 }
@@ -318,6 +329,7 @@ func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
 		//If the len is greater than 1, we have a keyword, identifier or bit_string so we are going to match the literal to the token to see
 		//if it is a keyword
 		if len(lit) > 1 {
+			tok = token.Lookup(lit)
 			switch tok {
 			case token.IDENT:
 				//Ugly but needed to capture bit_str with number length
@@ -393,6 +405,7 @@ func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
 		case ':':
 			tok = token.COLON
 			if s.ch == '=' {
+				s.next()
 				tok = token.VAR_ASSIGN
 			}
 		case '.':
@@ -413,21 +426,17 @@ func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
 		case '+':
 			tok = token.PLUS
 		case '-':
+			tok = token.MINUS
 			if s.ch == '-' {
 				//Comment
-				comment, valid := s.scanComment()
+				comment, valid := s.scanSingleLineComment()
 				tok = token.COMMENT
 				if !valid {
 					tok = token.ILLEGAL
 				}
 				lit = comment
-			} else {
-				// Minus
-				tok = token.MINUS
 			}
 
-			//Add comment catch
-			tok = token.MINUS
 		case '&':
 			tok = token.CONCAT
 		case '?':
@@ -445,9 +454,10 @@ func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
 				s.next()
 			}
 		case '/':
+			tok = token.DIV
 			if s.ch == '*' {
 				//Comment
-				comment, valid := s.scanComment()
+				comment, valid := s.scanMultipleLineComment()
 				tok = token.COMMENT
 				if !valid {
 					tok = token.ILLEGAL
@@ -456,8 +466,6 @@ func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
 			} else if s.ch == '=' {
 				tok = token.NEQ
 				s.next()
-			} else {
-				tok = token.DIV
 			}
 		case '<':
 			tok = token.LTH
