@@ -102,8 +102,9 @@ func (s *Scanner) scanMultipleLineComment() (string, bool) {
 	valid := false //If set means a valid comment was found
 	//On VHDL we have /**/ commants and -- comments
 	if s.ch == '*' {
-		s.next()        //Consumed the '*'
+		//Consumed the '*'
 		for s.ch >= 0 { //Consume everything
+			s.next()
 			if s.ch == '*' && s.peek() == '/' {
 				s.next() //Consume '*'
 				s.next() //Consume '/'

@@ -117,11 +117,11 @@ func (f *File) Offset(p Pos) int {
 func (f *File) Pos(offset int) Pos {
 	index := offset + f.base
 
-	if offset > f.size {
+	if index > f.size {
 		return Pos(f.size)
 	}
 
-	if offset < f.base {
+	if index < f.base {
 		return Pos(0)
 	}
 
