@@ -16,9 +16,11 @@ func (p *Parser) parseEntityDeclaration() (ast.EntityDeclaration, error) {
 		return entity, errors.New("Expected ENTITY keyword")
 	}
 	entity.Identifier.Identifier = p.lit
+	entity.Identifier.Pos = p.pos
 	if p.expect(token.IDENT) == token.NoPos {
 		return entity, errors.New("Expected IDENTIFIER")
 	}
+	entity.Identifier.Pos = p.pos
 	if p.expect(token.IS) == token.NoPos {
 		return entity, errors.New("Expected IS keyword")
 	}
@@ -73,6 +75,7 @@ func (p *Parser) parseEntityDeclaration() (ast.EntityDeclaration, error) {
 
 func (p *Parser) parseEntityHeader() (ast.EntityHeader, error) {
 	var entityHeader ast.EntityHeader
+	entityHeader.Pos = p.pos
 	if p.trace {
 		defer un(trace(p, "EntityHeader"))
 	}

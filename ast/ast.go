@@ -73,10 +73,12 @@ type EntityStatement interface{}
 
 type ArchitectureBody struct {
 	Identifier                Identifier
-	EntityName                EntityName
+	EntityName                Name
+    ArchitectureDeclarativePart ArchitectureDeclarativePart
 	ArchitectureStatementPart ArchitectureStatementPart
-	ArchitectureSimpleName    ArchitectureSimpleName
+	ArchitectureSimpleName    *SimpleName
     SecondaryUnit
+    Node
 }
 
 type EntityName struct {
