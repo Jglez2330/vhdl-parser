@@ -34,7 +34,7 @@ type EntityDeclaration struct {
 	EntityHeader          EntityHeader
 	EntityDeclarativePart EntityDeclarativePart
 	EntityStatementPart   *EntityStatementPart
-	EntitySimpleName      *EntitySimpleName
+	EntitySimpleName      *SimpleName
 	Node
 	LibraryUnit
 	PrimaryUnit
@@ -76,6 +76,7 @@ type ArchitectureBody struct {
 	EntityName                EntityName
 	ArchitectureStatementPart ArchitectureStatementPart
 	ArchitectureSimpleName    ArchitectureSimpleName
+    SecondaryUnit
 }
 
 type EntityName struct {

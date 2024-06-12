@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"vhdl/ast"
 	"vhdl/scanner"
@@ -160,83 +161,83 @@ func (p *Parser) next() {
 
 }
 
-func (p *Parser) ParseFile() *ast.File {
-	file := &ast.File{}
+func (p *Parser) ParseFile() (ast.File, error) {
+	file := ast.File{}
 
 	var designUnits []ast.DesignUnit
 	for p.tok != token.EOF {
-		if designUnit := p.ParseDesignUnit(); designUnit != nil {
-			designUnits = append(designUnits, *designUnit)
+		if designUnit, error := p.ParseDesignUnit(); error != nil {
+			designUnits = append(designUnits, designUnit)
 		}
 	}
 	file.DesignUnits = designUnits
-	return file
+	return file, nil
 }
 
-func (p *Parser) ParseDesignUnit() (*ast.DesignUnit, error) {
+func (p *Parser) ParseDesignUnit() (ast.DesignUnit, error) {
 	var DesignUnit ast.DesignUnit
 	//TODO parse context clause
 
 	//Parse library unit
-	if lu := p.parseLibraryUnit(); lu != nil {
-		DesignUnit.LibraryUnit = *lu
+	if lu, error := p.parseLibraryUnit(); error != nil {
+		DesignUnit.LibraryUnit = &lu
 	}
 	//if lu = p.parseLibraryUnit(); lu == nil {
 
-	return &DesignUnit, nil
+	return DesignUnit, nil
 }
 
-func (p *Parser) parseLibraryUnit() *ast.LibraryUnit {
+func (p *Parser) parseLibraryUnit() (ast.LibraryUnit, error) {
 	if p.trace {
 		defer un(trace(p, "LibraryUnit"))
 	}
 
+    if p.isPrimaryUnit(p.tok) {
+        return p.parsePrimaryUnit()
+    }else if p.isSecondaryUnit(p.tok) {
+        return p.parseSecondaryUnit()
+    }else {
+        p.errorExpected(p.pos, "expected primary or secondary unit, found %s", p.tok)
+    }
+
+
+
+
+	return ast.EntityDeclaration{}, nil
+
+}
+
+
+func (p *Parser) parsePrimaryUnit() (ast.PrimaryUnit, error) {
+
 	switch p.tok {
 	case token.ENTITY:
-		if entity := p.parseEntityDeclaration(); entity != nil {
-			lu := ast.LibraryUnit(*entity)
-			return &lu
+		entity, error := p.parseEntityDeclaration()
+		if error != nil {
+			return entity, errors.New("invalid entity declaration")
 		}
+		return entity, nil
 	default:
 		p.errorExpected(p.pos, "expected entity declaration, found %s", p.tok)
 	}
-
-	return nil
-
-}
-func (p *Parser) parseEntityDeclaration() *ast.EntityDeclaration {
-	var entity ast.EntityDeclaration
-	if p.trace {
-		defer un(trace(p, "EntityDeclaration"))
-	}
-	if p.expect(token.ENTITY) == token.NoPos {
-		return nil
-	}
-	entity.Pos = p.pos
-	if p.expect(token.IDENT) == token.NoPos {
-		return nil
-	}
-	entity.Identifier.Identifier = p.lit
-	if p.expect(token.IS) == token.NoPos {
-		return nil
-	}
-	return &entity
+	return ast.EntityDeclaration{}, nil
 
 }
 
-func (p *Parser) ParseEntity() {
-	entity := &ast.EntityDeclaration{}
-	if p.expect(token.ENTITY) == token.NoPos {
-		return
-	}
-
-	if p.expect(token.IDENT) == token.NoPos {
-		return
-	}
-	entity.Identifier = ast.Identifier{Identifier: p.lit}
-
+func (p* Parser) isPrimaryUnit(tok token.Token) bool {
+    //token is primary unit if it is entity, package, configuration, package instatioation,context
+    return tok == token.ENTITY || tok == token.PACKAGE || tok == token.CONFIGURATION || tok == token.CONTEXT
 }
 
+func (p* Parser) isSecondaryUnit(tok token.Token) bool {
+    //token is secondary unit if it is architecture body or package body
+    return tok == token.ARCHITECTURE 
+}
+
+func (p* Parser) parseSecondaryUnit() (ast.SecondaryUnit, error) {
+    return ast.ArchitectureBody{}, nil
+}
+    
 func (p *Parser) expect(tok token.Token) token.Pos {
 	pos := token.NoPos
 	if p.tok != tok {
