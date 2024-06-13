@@ -795,7 +795,11 @@ type DesignUnit struct {
 	LibraryUnit   LibraryUnit
 }
 
-type ContextClause interface{}
+type ContextClause struct{
+    ContextItems *[]ContextItem
+}
+
+type ContextItem interface{}
 
 type LibraryUnit interface{}
 
@@ -805,4 +809,10 @@ type PrimaryUnit interface {
 
 type SecondaryUnit interface {
 	LibraryUnit
+}
+
+type ContextReference struct {
+    SimpleName SimpleName
+    SimpleNames *[]SimpleName
+    Node
 }

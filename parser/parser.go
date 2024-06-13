@@ -131,6 +131,11 @@ func (p *Parser) next0() {
 	}
 }
 
+// Peeks into the next next token.
+func (p *Parser) peek() token.Token {
+    return p.tok
+}
+
 // Consume a comment and return it and the line on which it ends.
 func (p *Parser) consumeComment() (comment *ast.Comment, endline int) {
 	// /*-style comments may end on a different line than where they start.
@@ -177,15 +182,72 @@ func (p *Parser) ParseFile() (ast.File, error) {
 func (p *Parser) ParseDesignUnit() (ast.DesignUnit, error) {
 	var DesignUnit ast.DesignUnit
 	//TODO parse context clause
+	if ctx_clause, error := p.parseContextClause(); error == nil {
+		DesignUnit.ContextClause = ctx_clause
+	}
 
 	//Parse library unit
 	if lu, error := p.parseLibraryUnit(); error == nil {
-		DesignUnit.LibraryUnit = &lu
+		DesignUnit.LibraryUnit = lu
 	}
 	//if lu = p.parseLibraryUnit(); lu == nil {
 
 	return DesignUnit, nil
 }
+
+func (p *Parser) isContextClause(tok token.Token) bool {
+	//token is context clause if it is context, library or use keyword
+	return tok == token.CONTEXT || tok == token.LIBRARY || tok == token.USE
+}
+
+func (p *Parser) parseContextClause() (ast.ContextClause, error) {
+	var ctx_clause ast.ContextClause
+	if p.trace {
+		defer un(trace(p, "ContextClause"))
+	}
+
+	for p.isContextClause(p.tok) {
+		switch p.tok {
+		case token.CONTEXT:
+			ctx_reference, error := p.parseContextReference()
+			if error != nil {
+				p.errorExpected(p.pos, "expected context reference, found %s", p.tok)
+				return ctx_clause, errors.New("invalid context reference")
+			}
+			ctx_clause.ContextItems = append(ctx_clause.ContextItems, ctx_reference)
+		case token.LIBRARY:
+			p.parseLibraryReference()
+		case token.USE:
+			p.parseUseClause()
+		default:
+			p.errorExpected(p.pos, "expected context reference, library reference or use clause, found %s", p.tok)
+			break
+		}
+	}
+
+	return ctx_clause, nil
+}
+
+func (p *Parser) parseContextReference() (ast.ContextReference, error) {
+    var ctx_reference ast.ContextReference
+    if p.trace {
+        defer un(trace(p, "ContextReference"))
+    }
+
+    ctx_reference.Pos = p.pos
+    if p.expect(token.CONTEXT) == token.NoPos {
+        return ctx_reference, errors.New("invalid context reference")
+    }
+
+    selected_name, error := p.parseSelectedName()
+    if error != nil {
+        return ctx_reference, errors.New("invalid selected name")
+    }
+
+    return ctx_reference, nil
+}
+
+
 
 func (p *Parser) parseLibraryUnit() (ast.LibraryUnit, error) {
 	if p.trace {
@@ -252,6 +314,11 @@ func (p *Parser) expect(tok token.Token) token.Pos {
 		p.next()
 	}
 	return pos
+}
+
+func (p *Parser) revert(pos token.Pos) {
+    p.pos = pos
+    p.scanner.RevertPos(pos)
 }
 
 func (p *Parser) errorExpected(pos token.Pos, format string, args ...interface{}) {
