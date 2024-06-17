@@ -35,6 +35,11 @@ type Parser struct {
 	tok token.Token // one token look-ahead
 	lit string      // token literal
 
+	//Lookahead + 2 token
+	pos2 token.Pos
+	tok2 token.Token
+	lit2 string
+
 	exprLev int  // < 0: in control clause, >= 0: in expression
 	inRhs   bool // if set, the parser is parsing a rhs expression
 
@@ -50,6 +55,8 @@ func (p *Parser) Init(fset *token.FileSet, filename string, src []byte, mode Mod
 
 	p.mode = mode
 	p.trace = mode&Trace != 0 // for convenience (p.trace is used frequently)
+	//Load 2 next to load the lokkahead + 2 token
+	p.next()
 	p.next()
 }
 
@@ -120,7 +127,10 @@ func (p *Parser) next0() {
 	}
 
 	for {
-		p.pos, p.tok, p.lit = p.scanner.Scan()
+		//Move the lookahead token to the next token
+		p.pos, p.tok, p.lit = p.pos2, p.tok2, p.lit2
+		//Get the lookahead + 2 token
+		p.pos2, p.tok2, p.lit2 = p.scanner.Scan()
 		if p.tok == token.COMMENT {
 			if p.mode&ParseComments == 0 {
 				continue
@@ -133,7 +143,7 @@ func (p *Parser) next0() {
 
 // Peeks into the next next token.
 func (p *Parser) peek() token.Token {
-    return p.tok
+	return p.tok
 }
 
 // Consume a comment and return it and the line on which it ends.
@@ -216,9 +226,19 @@ func (p *Parser) parseContextClause() (ast.ContextClause, error) {
 			}
 			ctx_clause.ContextItems = append(ctx_clause.ContextItems, ctx_reference)
 		case token.LIBRARY:
-			p.parseLibraryReference()
+			lib_clause, error := p.parseLibraryClause()
+			if error != nil {
+				p.errorExpected(p.pos, "expected library clause, found %s", p.tok)
+				return ctx_clause, errors.New("invalid library clause")
+			}
+			ctx_clause.ContextItems = append(ctx_clause.ContextItems, lib_clause)
 		case token.USE:
-			p.parseUseClause()
+			use_clause, error := p.parseUseClause()
+			if error != nil {
+				p.errorExpected(p.pos, "expected use clause, found %s", p.tok)
+				return ctx_clause, errors.New("invalid use clause")
+			}
+			ctx_clause.ContextItems = append(ctx_clause.ContextItems, use_clause)
 		default:
 			p.errorExpected(p.pos, "expected context reference, library reference or use clause, found %s", p.tok)
 			break
@@ -229,25 +249,105 @@ func (p *Parser) parseContextClause() (ast.ContextClause, error) {
 }
 
 func (p *Parser) parseContextReference() (ast.ContextReference, error) {
-    var ctx_reference ast.ContextReference
-    if p.trace {
-        defer un(trace(p, "ContextReference"))
-    }
+	var ctx_reference ast.ContextReference
+	if p.trace {
+		defer un(trace(p, "ContextReference"))
+	}
 
-    ctx_reference.Pos = p.pos
-    if p.expect(token.CONTEXT) == token.NoPos {
-        return ctx_reference, errors.New("invalid context reference")
-    }
+	ctx_reference.Pos = p.pos
+	if p.expect(token.CONTEXT) == token.NoPos {
+		return ctx_reference, errors.New("invalid context reference")
+	}
 
-    selected_name, error := p.parseSelectedName()
-    if error != nil {
-        return ctx_reference, errors.New("invalid selected name")
-    }
+	selected_name, error := p.parseSelectedName()
+	if error != nil {
+		return ctx_reference, errors.New("invalid selected name")
+	}
+	ctx_reference.ContextSelecteName = selected_name
 
-    return ctx_reference, nil
+	var selected_names []ast.SelectedName
+	for p.tok == token.COMMA {
+		p.next()
+		selected_name, error := p.parseSelectedName()
+		if error != nil {
+			return ctx_reference, errors.New("invalid selected name")
+		}
+		selected_names = append(selected_names, selected_name)
+	}
+	ctx_reference.ContextSelecteNames = selected_names
+
+	if p.expect(token.SEMICOLON) == token.NoPos {
+		return ctx_reference, errors.New("invalid context reference")
+	}
+
+	return ctx_reference, nil
 }
 
+func (p *Parser) parseLibraryClause() (ast.LibraryClause, error) {
+	var lib_clause ast.LibraryClause
+	if p.trace {
+		defer un(trace(p, "LibraryClause"))
+	}
+	lib_clause.Pos = p.pos
+	if p.expect(token.LIBRARY) == token.NoPos {
+		return lib_clause, errors.New("invalid library clause")
+	}
+	lib_clause.LogicalNameList.LogicalName = ast.LogicalName{Identifier: ast.Identifier{Identifier: p.lit}}
+	if p.expect(token.IDENT) == token.NoPos {
+		return lib_clause, errors.New("invalid library clause")
+	}
+	var logical_names []ast.LogicalName
+	for p.tok == token.COMMA {
+		p.next()
+		logical_name := ast.LogicalName{Identifier: ast.Identifier{Identifier: p.lit}}
+		if p.expect(token.IDENT) == token.NoPos {
+			return lib_clause, errors.New("invalid library clause")
+		}
+		logical_names = append(logical_names, logical_name)
+	}
 
+	lib_clause.LogicalNameList.LogicalNames = logical_names
+	if p.expect(token.SEMICOLON) == token.NoPos {
+		return lib_clause, errors.New("invalid library clause")
+	}
+
+	return lib_clause, nil
+}
+
+func (p *Parser) parseUseClause() (ast.UseClause, error) {
+	var use_clause ast.UseClause
+	if p.trace {
+		defer un(trace(p, "UseClause"))
+	}
+	use_clause.Pos = p.pos
+
+	if p.expect(token.USE) == token.NoPos {
+		return use_clause, errors.New("invalid use clause")
+	}
+
+	selected_name, error := p.parseSelectedName()
+	if error != nil {
+		return use_clause, errors.New("invalid selected name")
+	}
+	use_clause.SelectedName = selected_name
+
+	var selected_names []ast.SelectedName
+	for p.tok == token.COMMA {
+		p.next()
+		selected_name, error := p.parseSelectedName()
+		if error != nil {
+			return use_clause, errors.New("invalid selected name")
+		}
+		selected_names = append(selected_names, selected_name)
+	}
+	use_clause.SelectedNameList = selected_names
+
+	if p.expect(token.SEMICOLON) == token.NoPos {
+		return use_clause, errors.New("invalid use clause")
+	}
+
+	return use_clause, nil
+}
 
 func (p *Parser) parseLibraryUnit() (ast.LibraryUnit, error) {
 	if p.trace {
@@ -317,8 +417,9 @@ func (p *Parser) expect(tok token.Token) token.Pos {
 }
 
 func (p *Parser) revert(pos token.Pos) {
-    p.pos = pos
-    p.scanner.RevertPos(pos)
+	p.pos = pos
+	p.scanner.RevertPos(pos)
+	p.next()
 }
 
 func (p *Parser) errorExpected(pos token.Pos, format string, args ...interface{}) {

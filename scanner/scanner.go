@@ -90,7 +90,7 @@ func (s *Scanner) next() {
 
 }
 
-func (s *Scanner) peek() rune {
+func (s *Scanner) Peek() rune {
 	if s.rdOffset < len(s.src) {
 		return rune(s.src[s.rdOffset])
 	}
@@ -105,7 +105,7 @@ func (s *Scanner) scanMultipleLineComment() (string, bool) {
 		//Consumed the '*'
 		for s.ch >= 0 { //Consume everything
 			s.next()
-			if s.ch == '*' && s.peek() == '/' {
+			if s.ch == '*' && s.Peek() == '/' {
 				s.next() //Consume '*'
 				s.next() //Consume '/'
 				valid = true
@@ -397,7 +397,7 @@ func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
 		case '\'':
 			//TODO add only ' recognition
 			//peek must be ' only 1 char inside ' '
-			if s.peek() != '\'' {
+			if s.Peek() != '\'' {
 				tok = token.APOS
 			} else {
 				tok = token.CHAR
@@ -506,4 +506,10 @@ func (s *Scanner) Scan() (pos token.Pos, tok token.Token, lit string) {
 	}
 
 	return
+}
+
+func (s *Scanner) RevertPos(pos token.Pos) {
+    s.offset = s.file.Offset(pos)
+    s.rdOffset = s.offset
+    s.ch = rune(s.src[s.offset])
 }

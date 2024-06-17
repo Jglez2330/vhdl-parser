@@ -72,13 +72,13 @@ type EntityStatementPart struct {
 type EntityStatement interface{}
 
 type ArchitectureBody struct {
-	Identifier                Identifier
-	EntityName                Name
-    ArchitectureDeclarativePart ArchitectureDeclarativePart
-	ArchitectureStatementPart ArchitectureStatementPart
-	ArchitectureSimpleName    *SimpleName
-    SecondaryUnit
-    Node
+	Identifier                  Identifier
+	EntityName                  Name
+	ArchitectureDeclarativePart ArchitectureDeclarativePart
+	ArchitectureStatementPart   ArchitectureStatementPart
+	ArchitectureSimpleName      *SimpleName
+	SecondaryUnit
+	Node
 }
 
 type EntityName struct {
@@ -737,7 +737,8 @@ type GroupConstituent interface{}
 
 type UseClause struct {
 	SelectedName     SelectedName
-	SelectedNameList *[]SelectedName
+	SelectedNameList []SelectedName
+    Node
 }
 
 type SelectedName struct {
@@ -746,33 +747,27 @@ type SelectedName struct {
 	Name
 }
 
-type Prefix interface{ OptionalNode }
+type Prefix interface {
+}
 
 type Name interface{}
 
-type Suffix interface{ OptionalNode }
+type Suffix interface{}
 
 type SimpleName struct {
 	Identifier Identifier
-	Suffix
-	Name
 }
 
 type CharacterLiteral struct {
 	GraphicCharacter GraphicCharacter
-	Suffix
-	Name
 }
 
 type GraphicCharacter struct {
-	Token token.Token
+    Character string
 }
 
 type OperatorSymbol struct {
-	Token token.Token
-	//StringLiteral
-	Suffix
-	Name
+    Symbol string
 }
 
 type SuffixKeyword struct {
@@ -785,6 +780,11 @@ type Identifier struct {
 	Node
 }
 
+type Keyword struct {   
+    Token token.Token
+    Value string
+}
+
 type File struct {
 	FileStart, FileEnd token.Pos // start and end of entire file
 	DesignUnits        []DesignUnit
@@ -795,8 +795,8 @@ type DesignUnit struct {
 	LibraryUnit   LibraryUnit
 }
 
-type ContextClause struct{
-    ContextItems *[]ContextItem
+type ContextClause struct {
+	ContextItems []ContextItem
 }
 
 type ContextItem interface{}
@@ -812,7 +812,26 @@ type SecondaryUnit interface {
 }
 
 type ContextReference struct {
-    SimpleName SimpleName
-    SimpleNames *[]SimpleName
+	ContextSelecteName  SelectedName
+	ContextSelecteNames []SelectedName
+	Node
+}
+
+
+// 13.2 Design units and their analysis
+type LibraryClause struct {
+    LogicalNameList LogicalNameList
     Node
 }
+
+type LogicalNameList struct {
+    LogicalName LogicalName
+    LogicalNames []LogicalName
+    Node
+}
+
+type LogicalName struct{
+    Identifier Identifier
+    Node
+}
+
