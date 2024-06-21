@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"runtime/trace"
 	"vhdl/ast"
 	"vhdl/token"
 )
@@ -11,23 +12,35 @@ func (p *Parser) parseName() (ast.Name, error) {
 	if p.trace {
 		defer un(trace(p, "Name"))
 	}
-    if p.tok == token.IDENT && p.tok2 == token.DOT {
-        //Parse Selected Name
-        selected_name, error := p.parseSelectedName()
-        if error != nil {
-            return name, errors.New("invalid selected name")
-        }
-        name = selected_name
-    } else {
-        //Parse Simple Name
-        simple_name, error := p.parseSimpleName()
-        if error != nil {
-            return name, errors.New("invalid simple name")
-        }
-        name = simple_name
+    switch p.tok {
+    case token.IDENT:
+        p.parseNamePart()
+        //Check if is selected_name, simple_name, indexed_name, slice_name, attribute_name
+    case token.STRING:
+        //Is operator_symbol
+    case token.CHAR:
+        //Is character_literal
+    case default:
+        return name, errors.New("invalid name")
     }
 
 	return name, nil
+}
+
+func (p *Parser) parseNamePart() (ast.NamePart, error) {
+    if p.trace {
+        defer un(trace(p, "NamePart"))
+    }
+    var name any 
+    switch p.tok {
+    case token.DOT:
+    case Token.LPAREN:
+        p.parseFunctionCallOrIndexedNameOrSliceName()
+    case token.APOS:
+        p.parseAttributeName()
+    default:
+        return name, errors.New("Invalid namepart")
+    }
 }
 
 func (p *Parser) parseSimpleName() (ast.SimpleName, error) {
@@ -86,28 +99,25 @@ func (p *Parser) parsePrefix() (ast.Prefix, error) {
 }
 
 func (p *Parser) recursiveParseName(name_option any) (ast.Name, error) {
-    var name any
-    if p.trace {
-        defer un(trace(p, "Name"))
-    }
+	var name any
+	if p.trace {
+		defer un(trace(p, "Name"))
+	}
 
-    //Check if is selected_name
-    if p.tok == token.IDENT && p.tok2 == token.DOT {
-        //Call recursivePrefix function
-        var selected_name ast.SelectedName
-        if name_option == nil {
-            name_option = ast.SelectedName{}
-            name_option.Prefix = p.lit
-        }
-        selected_name.Prefix = name_option
-        p.next()
-
-
-
-
+	//Check if is selected_name
+	if p.tok == token.IDENT && p.tok2 == token.DOT {
+		//Call recursivePrefix function
+		var selected_name ast.SelectedName
+		if name_option == nil {
+			name_option = ast.SelectedName{}
+			//name_option.Prefix = p.lit
+		}
+		selected_name.Prefix = name_option
+		p.next()
+	}
+	return name, nil
 
 }
-
 
 func (p *Parser) parseSuffix() (ast.Suffix, error) {
 	var suffix ast.Suffix
